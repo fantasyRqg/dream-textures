@@ -15,13 +15,13 @@ class TestBackend(Backend):
     custom_optimization: bpy.props.BoolProperty(name="My Custom Optimization")
 
     def list_models(self, context) -> List[Model]:
-        return []
+        return [Model("Test Model", "A short description of this model", "test_model")]
 
     def list_schedulers(self, context) -> List[str]:
-        return []
+        return ["remote"]
 
     def generate(self, task: Task, model: Model, prompt: Prompt, size: Tuple[int, int] | None, seed: int, steps: int, guidance_scale: float, scheduler: str, seamless_axes: SeamlessAxes, step_preview_mode: StepPreviewMode, iterations: int, step_callback: StepCallback, callback: Callback):
-        raise NotImplementedError()
+        raise NotImplementedError("generate")
 
     def draw_speed_optimizations(self, layout, context):
         layout.prop(self, "custom_optimization")

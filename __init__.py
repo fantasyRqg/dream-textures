@@ -37,7 +37,6 @@ if current_process().name != "__actor__":
     clear_modules() # keep before all addon imports
 
     from .render_pass import register_render_pass, unregister_render_pass, pass_inputs
-    from .prompt_engineering import *
     from .operators.open_latest_version import check_for_updates
     from .operators.project import framebuffer_arguments
     from .classes import CLASSES, PREFERENCE_CLASSES
@@ -50,6 +49,7 @@ if current_process().name != "__actor__":
     from . import engine
 
     from .diffusers_backend import DiffusersBackend
+    from .weui_api_backend import WebUIApiBackend
 
     requirements_path_items = (
         ('requirements/win-linux-cuda.txt', 'Linux/Windows (CUDA)', 'Linux or Windows with NVIDIA GPU'),
@@ -132,6 +132,7 @@ if current_process().name != "__actor__":
         
         # Register the default backend.
         bpy.utils.register_class(DiffusersBackend)
+        bpy.utils.register_class(WebUIApiBackend)
 
     def unregister():
         for cls in PREFERENCE_CLASSES:
@@ -150,5 +151,7 @@ if current_process().name != "__actor__":
 
         # Unregister the default backend
         bpy.utils.unregister_class(DiffusersBackend)
+        bpy.utils.unregister_class(WebUIApiBackend)
+
 
         kill_generator()
