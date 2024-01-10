@@ -327,6 +327,7 @@ class StableDiffusionPreferences(bpy.types.AddonPreferences):
     model_results: CollectionProperty(type=Model)
     active_model_result: bpy.props.IntProperty(name="Active Model", default=0)
     hf_token: StringProperty(name="HuggingFace Token")
+    server_url: StringProperty(name="Remote Server URL")
     prefer_fp16_variant: bpy.props.BoolProperty(name="Prefer Half Precision Weights", description="Download fp16 weights if available for smaller file size. If you run with 'Half Precision' disabled, you should not use this setting", default=True)
     resume_download: bpy.props.BoolProperty(name="Resume Incomplete Download", description="Continue an in-progress download in case if Blender was closed or connection was interrupted, otherwise incomplete files will be entirely redownloaded", default=True)
 
@@ -400,6 +401,12 @@ class StableDiffusionPreferences(bpy.types.AddonPreferences):
                 
                 search_box.prop(self, "prefer_fp16_variant")
                 search_box.prop(self, "resume_download")
+
+                server_box = layout.box()
+                server_box.label(text="Server", icon="WORLD_DATA")
+                url_row = server_box.row()
+                url_row.prop(self, "server_url", text="Server URL")
+
 
             layout.template_list(PREFERENCES_UL_ModelList.__name__, "dream_textures_installed_models", self, "installed_models", self, "active_installed_model")
             import_weights = layout.operator(ImportWeights.bl_idname, icon='IMPORT')

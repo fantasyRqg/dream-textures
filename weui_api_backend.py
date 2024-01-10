@@ -2,7 +2,13 @@ import bpy
 from bpy.props import FloatProperty, IntProperty, EnumProperty, BoolProperty
 from typing import List, Tuple
 from dream_textures.api import *
+from .preferences import StableDiffusionPreferences
 import requests
+import urllib.parse
+
+svr_url = ""
+session = requests.Session()
+sd_models = []
 
 
 class WebUIApiBackend(Backend):
@@ -10,19 +16,24 @@ class WebUIApiBackend(Backend):
     description = "A short description of this backend"
 
     custom_optimization: bpy.props.BoolProperty(name="My Custom Optimization")
-    url: bpy.props.StringProperty(name="URL")
-
-    session = requests.Session()
 
     def _get_url(self, path: str) -> str:
-        return f"{self.url}/{path}"
+        return urllib.parse.urljoin(svr_url, path)
 
     def list_models(self, context) -> List[Model]:
-        model_data = self.session.get(self._get_url("/sdapi/v1/sd-models"))
-        models = []
-        for model in model_data.json():
-            models.append(Model(model["model_name"], model["filename"], model["hash"]))
-        return models
+        if len(sd_models) > 0:
+            return sd_models
+
+        global svr_url
+        svr_url = context.preferences.addons[StableDiffusionPreferences.bl_idname].preferences.server_url
+        model_data = session.get(self._get_url("/sdapi/v1/sd-models"))
+        print(self._get_url("/sdapi/v1/sd-models"), model_data)
+        for m in model_data.json():
+            sd_models.append(Model(name=m["model_name"], description=m["filename"], id=m["title"]))
+
+        for m in sd_models:
+            print(m)
+        return sd_models
 
     def list_schedulers(self, context) -> List[str]:
         return ["remote"]
