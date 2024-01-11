@@ -1,14 +1,19 @@
-from multiprocessing import Queue, Lock, current_process, get_context
 import multiprocessing.synchronize
 import enum
+import pickle
 import traceback
 import threading
+from threading import Lock
+from queue import Queue, Empty
 from typing import Type, TypeVar, Generator
 import site
 import sys
 import os
+
 from ..absolute_path import absolute_path
 from .future import Future
+import asyncio
+
 
 def _load_dependencies():
     site.addsitedir(absolute_path(".python_dependencies"))
@@ -20,8 +25,14 @@ def _load_dependencies():
         python3_path = os.path.abspath(os.path.join(sys.executable, "..\\..\\..\\..\\python3.dll"))
         if os.path.exists(python3_path):
             os.add_dll_directory(os.path.dirname(python3_path))
-if current_process().name == "__actor__":
-    _load_dependencies()
+
+
+_load_dependencies()
+import websockets
+
+
+# if current_process().name == "__actor__":
+#     _load_dependencies()
 
 class ActorContext(enum.IntEnum):
     """
@@ -32,6 +43,7 @@ class ActorContext(enum.IntEnum):
     """
     FRONTEND = 0
     BACKEND = 1
+
 
 class Message:
     """
@@ -44,9 +56,13 @@ class Message:
         self.method_name = method_name
         self.args = args
         self.kwargs = kwargs
-    
+
     CANCEL = "__cancel__"
     END = "__end__"
+
+    def __str__(self):
+        return f"Message(method_name={self.method_name}, args={self.args}, kwargs={self.kwargs})"
+
 
 def _start_backend(cls, message_queue, response_queue):
     cls(
@@ -55,12 +71,15 @@ def _start_backend(cls, message_queue, response_queue):
         response_queue=response_queue
     ).start()
 
+
 class TracedError(BaseException):
     def __init__(self, base: BaseException, trace: str):
         self.base = base
         self.trace = trace
 
+
 T = TypeVar('T', bound='Actor')
+
 
 class Actor:
     """
@@ -84,16 +103,21 @@ class Actor:
         "close",
         "is_alive",
         "can_use",
-        "shared"
+        "shared",
+        "set_svr_uri"
     }
 
     def __init__(self, context: ActorContext, message_queue: Queue = None, response_queue: Queue = None):
         self.context = context
-        self._message_queue = message_queue if message_queue is not None else get_context('spawn').Queue(maxsize=1)
-        self._response_queue = response_queue if response_queue is not None else get_context('spawn').Queue(maxsize=1)
+        self._message_queue = message_queue if message_queue is not None else Queue(maxsize=1)
+        self._response_queue = response_queue if response_queue is not None else Queue(maxsize=1)
         self._setup()
         self.__class__._shared_instance = self
-    
+        self.svr_connected = False
+        self.svr_uri = None
+        self.svr_thread = None
+        self.svr_close = False
+
     def _setup(self):
         """
         Setup the Actor after initialization.
@@ -101,7 +125,8 @@ class Actor:
         match self.context:
             case ActorContext.FRONTEND:
                 self._lock = Lock()
-                for name in filter(lambda name: callable(getattr(self, name)) and not name.startswith("_") and name not in self._protected_methods, dir(self)):
+                for name in filter(lambda name: callable(getattr(self, name)) and not name.startswith(
+                        "_") and name not in self._protected_methods, dir(self)):
                     setattr(self, name, self._send(name))
             case ActorContext.BACKEND:
                 pass
@@ -116,36 +141,96 @@ class Actor:
         """
         match self.context:
             case ActorContext.FRONTEND:
-                self.process = get_context('spawn').Process(target=_start_backend, args=(self.__class__, self._message_queue, self._response_queue), name="__actor__", daemon=True)
-                self.process.start()
+                # self.process = get_context('spawn').Process(target=_start_backend, args=(self.__class__, self._message_queue, self._response_queue), name="__actor__", daemon=True)
+                # self.process.start()
+                self.svr_thread = threading.Thread(target=self._client_to_sever)
+                self.svr_thread.start()
             case ActorContext.BACKEND:
                 os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"
                 self._backend_loop()
         return self
-    
+
+    def set_svr_uri(self, uri):
+        print("set_svr_uri", uri)
+        self.svr_uri = uri
+
+    def _client_to_sever(self):
+        self.svr_close = False
+        self.svr_connected = False
+
+        async def handle_svr_data(websocket):
+            async for msg in websocket:
+                print(msg)
+
+        async def poll_send_msg(websocket):
+            while not self.svr_close:
+                try:
+                    msg = self._message_queue.get(block=False)
+                    if msg:
+                        dumps = pickle.dumps(msg)
+                        print("send", len(dumps), msg.method_name)
+                        await websocket.send(dumps)
+                except Empty as _:
+                    pass
+                await asyncio.sleep(0.1)
+
+        async def close_when_uri_change(websocket, uri):
+            while not self.svr_close:
+                if uri != self.svr_uri:
+                    await websocket.close()
+                    break
+                await asyncio.sleep(0.2)
+
+            await websocket.close()
+            print("websocket closed")
+
+        async def new_connect(uri):
+            async with websockets.connect(uri) as websocket:
+                self.svr_connected = True
+                await asyncio.gather(
+                    handle_svr_data(websocket),
+                    poll_send_msg(websocket),
+                    close_when_uri_change(websocket, uri)
+                )
+                self.svr_connected = False
+                print("svr disconnected")
+
+        async def main():
+            while not self.svr_close:
+                print("svr_uri", self.svr_uri)
+                if self.svr_uri:
+                    await new_connect(self.svr_uri)
+                await asyncio.sleep(0.2)
+
+        asyncio.run(main())
+
     def close(self):
         """
         Stop the actor process.
         """
         match self.context:
             case ActorContext.FRONTEND:
-                self.process.terminate()
-                self._message_queue.close()
-                self._response_queue.close()
+                # self.process.terminate()
+                self.svr_close = True
+                if self.svr_thread:
+                    self.svr_thread.join()
+                # self._message_queue.close()
+                # self._response_queue.close()
             case ActorContext.BACKEND:
                 pass
-    
+
     @classmethod
     def shared_close(cls: Type[T]):
         if cls._shared_instance is None:
             return
         cls._shared_instance.close()
         cls._shared_instance = None
-    
+        print("shared_close finished")
+
     def is_alive(self):
         match self.context:
             case ActorContext.FRONTEND:
-                return self.process.is_alive()
+                return self.svr_connected
             case ActorContext.BACKEND:
                 return True
 
@@ -159,6 +244,7 @@ class Actor:
             self._receive(self._message_queue.get())
 
     def _receive(self, message: Message):
+        print("actor receive", message.method_name)
         try:
             response = getattr(self, message.method_name)(*message.args, **message.kwargs)
             if isinstance(response, Generator):
@@ -176,6 +262,7 @@ class Actor:
                                 return self._message_queue.get(block=False) == Message.CANCEL
                             except:
                                 return False
+
                         res.check_cancelled = check_cancelled
                         res.add_response_callback(lambda _, res: self._response_queue.put(res))
                         res.add_exception_callback(lambda _, e: self._response_queue.put(RuntimeError(repr(e))))
@@ -185,6 +272,7 @@ class Actor:
             else:
                 self._response_queue.put(response)
         except Exception as e:
+            print(e)
             trace = traceback.format_exc()
             try:
                 if sys.modules[e.__module__].__file__.startswith(absolute_path(".python_dependencies")):
@@ -199,6 +287,7 @@ class Actor:
     def _send(self, name):
         def _send(*args, _block=False, **kwargs):
             future = Future()
+
             def _send_thread(future: Future):
                 self._lock.acquire()
                 self._message_queue.put(Message(name, args, kwargs))
@@ -216,15 +305,17 @@ class Actor:
                         future.set_exception(response)
                     else:
                         future.add_response(response)
-                
+
                 self._lock.release()
+
             if _block:
                 _send_thread(future)
             else:
                 thread = threading.Thread(target=_send_thread, args=(future,), daemon=True)
                 thread.start()
             return future
+
         return _send
-    
+
     def __del__(self):
         self.close()

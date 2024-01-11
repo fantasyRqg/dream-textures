@@ -20,10 +20,9 @@ bl_info = {
     "location": "Image Editor -> Sidebar -> Dream",
     "category": "Paint"
 }
+import os
 
-from multiprocessing import current_process
-
-if current_process().name != "__actor__":
+if os.environ.get("DREAM_TEXTURES_SERVER") is None:
     import bpy
     from bpy.props import IntProperty, PointerProperty, EnumProperty, BoolProperty, CollectionProperty
     import sys
@@ -45,7 +44,7 @@ if current_process().name != "__actor__":
     from .property_groups.dream_prompt import DreamPrompt
     from .property_groups.seamless_result import SeamlessResult
     from .ui.presets import register_default_presets
-    
+
     from . import engine
 
     from .diffusers_backend import DiffusersBackend
@@ -70,7 +69,7 @@ if current_process().name != "__actor__":
 
         for cls in PREFERENCE_CLASSES:
             bpy.utils.register_class(cls)
-        
+
         bpy.types.Scene.dream_textures_history = CollectionProperty(type=DreamPrompt)
 
         check_for_updates()
@@ -96,12 +95,12 @@ if current_process().name != "__actor__":
         bpy.types.Scene.dream_textures_render_properties_enabled = BoolProperty(default=False)
         bpy.types.Scene.dream_textures_render_properties_prompt = PointerProperty(type=DreamPrompt)
         bpy.types.Scene.dream_textures_render_properties_pass_inputs = EnumProperty(name="Pass Inputs", items=pass_inputs)
-        
+
         bpy.types.Scene.dream_textures_upscale_prompt = PointerProperty(type=DreamPrompt)
         bpy.types.Scene.dream_textures_upscale_tile_size = IntProperty(name="Tile Size", default=128, step=64, min=64, max=512)
         bpy.types.Scene.dream_textures_upscale_blend = IntProperty(name="Blend", default=32, step=8, min=0, max=512)
         bpy.types.Scene.dream_textures_upscale_seamless_result = PointerProperty(type=SeamlessResult)
-        
+
         bpy.types.Scene.dream_textures_project_prompt = PointerProperty(type=DreamPrompt)
         bpy.types.Scene.dream_textures_project_framebuffer_arguments = EnumProperty(name="Inputs", items=framebuffer_arguments)
         bpy.types.Scene.dream_textures_project_bake = BoolProperty(name="Bake", default=False, description="Re-maps the generated texture onto the specified UV map")
@@ -129,10 +128,11 @@ if current_process().name != "__actor__":
         register_render_pass()
 
         register_default_presets()
-        
+
         # Register the default backend.
         bpy.utils.register_class(DiffusersBackend)
         bpy.utils.register_class(WebUIApiBackend)
+
 
     def unregister():
         for cls in PREFERENCE_CLASSES:
@@ -146,7 +146,7 @@ if current_process().name != "__actor__":
         bpy.types.RENDER_PT_context.remove(engine.draw_device)
 
         engine.unregister()
-        
+
         unregister_render_pass()
 
         # Unregister the default backend

@@ -170,7 +170,7 @@ class ModelSearch(bpy.types.Operator):
     bl_options = {"REGISTER", "INTERNAL"}
 
     def execute(self, context):
-        
+
         return {"FINISHED"}
 
 class InstallModel(bpy.types.Operator):
@@ -218,6 +218,9 @@ def _model_search(self, context):
         set_model_list('model_results', future.result())
     Generator.shared().hf_list_models(self.model_query, self.hf_token).add_done_callback(on_done)
 
+def _server_url_changed(self, context):
+    print("_server_url_changed", self.server_url)
+    Generator.shared().set_svr_uri(self.server_url)
 def _update_ui(self, context):
     if hasattr(context.area, "regions"):
         for region in context.area.regions:
@@ -327,7 +330,7 @@ class StableDiffusionPreferences(bpy.types.AddonPreferences):
     model_results: CollectionProperty(type=Model)
     active_model_result: bpy.props.IntProperty(name="Active Model", default=0)
     hf_token: StringProperty(name="HuggingFace Token")
-    server_url: StringProperty(name="Remote Server URL")
+    server_url: StringProperty(name="Remote Server URL", update=_server_url_changed)
     prefer_fp16_variant: bpy.props.BoolProperty(name="Prefer Half Precision Weights", description="Download fp16 weights if available for smaller file size. If you run with 'Half Precision' disabled, you should not use this setting", default=True)
     resume_download: bpy.props.BoolProperty(name="Resume Incomplete Download", description="Continue an in-progress download in case if Blender was closed or connection was interrupted, otherwise incomplete files will be entirely redownloaded", default=True)
 
@@ -345,6 +348,7 @@ class StableDiffusionPreferences(bpy.types.AddonPreferences):
     @staticmethod
     def register():
         fetch_installed_models(False)
+        Generator.shared().set_svr_uri(bpy.context.preferences.addons[__package__].preferences.server_url)
 
     def draw(self, context):
         layout = self.layout
@@ -389,7 +393,7 @@ class StableDiffusionPreferences(bpy.types.AddonPreferences):
                 search_box.label(text="Search Hugging Face Hub for more compatible models.")
 
                 search_box.prop(self, "model_query", text="", icon="VIEWZOOM")
-                
+
                 if len(self.model_results) > 0:
                     search_box.template_list(PREFERENCES_UL_ModelList.__name__, "dream_textures_model_results", self, "model_results", self, "active_model_result")
 
@@ -398,7 +402,7 @@ class StableDiffusionPreferences(bpy.types.AddonPreferences):
                 auth_row = search_box.row()
                 auth_row.prop(self, "hf_token", text="Token")
                 auth_row.operator(OpenURL.bl_idname, text="Get Your Token", icon="KEYINGSET").url = "https://huggingface.co/settings/tokens"
-                
+
                 search_box.prop(self, "prefer_fp16_variant")
                 search_box.prop(self, "resume_download")
 
@@ -421,7 +425,7 @@ class StableDiffusionPreferences(bpy.types.AddonPreferences):
                 complete_box.label(text="1. Open an Image Editor or Shader Editor space")
                 complete_box.label(text="2. Enable 'View' > 'Sidebar'")
                 complete_box.label(text="3. Select the 'Dream' tab")
-            
+
             if default_presets_missing():
                 presets_box = layout.box()
                 presets_box.label(text="Default Presets", icon="PRESET")
@@ -434,7 +438,7 @@ class StableDiffusionPreferences(bpy.types.AddonPreferences):
             missing_dependencies_box.label(text="You've likely downloaded source instead of release by accident.")
             missing_dependencies_box.label(text="Follow the instructions to install for your platform.")
             missing_dependencies_box.operator(OpenLatestVersion.bl_idname, text="Download Latest Release")
-        
+
         contributors_box = layout.box()
         contributors_box.label(text="Contributors", icon="COMMUNITY")
         contributors_box.label(text="Dream Textures is made possible by the contributors on GitHub.")
