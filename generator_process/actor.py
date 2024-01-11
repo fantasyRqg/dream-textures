@@ -26,7 +26,7 @@ def _load_dependencies():
         if os.path.exists(python3_path):
             os.add_dll_directory(os.path.dirname(python3_path))
 
-
+main_thread_rendering = False
 _load_dependencies()
 import websockets
 
