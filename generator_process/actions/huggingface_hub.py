@@ -172,6 +172,7 @@ def hf_snapshot_download(
     files = [file.rfilename for file in info.siblings]
 
     if "model_index.json" in files:
+        print("StableDiffusionPipeline",'-'*20, dir(StableDiffusionPipeline))
         StableDiffusionPipeline.download(
             model,
             use_auth_token=token,

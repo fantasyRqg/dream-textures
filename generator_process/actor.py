@@ -115,7 +115,7 @@ class Actor:
         self.__class__._shared_instance = self
         self.svr_connected = False
         self.svr_uri = None
-        self.svr_thread = None
+        self.work_thread = None
         self.svr_close = False
 
     def _setup(self):
@@ -143,11 +143,12 @@ class Actor:
             case ActorContext.FRONTEND:
                 # self.process = get_context('spawn').Process(target=_start_backend, args=(self.__class__, self._message_queue, self._response_queue), name="__actor__", daemon=True)
                 # self.process.start()
-                self.svr_thread = threading.Thread(target=self._client_to_sever)
-                self.svr_thread.start()
+                self.work_thread = threading.Thread(target=self._client_to_sever,daemon=True)
+                self.work_thread.start()
             case ActorContext.BACKEND:
                 os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"
-                self._backend_loop()
+                self.work_thread = threading.Thread(target=self._backend_loop, daemon=True)
+                self.work_thread.start()
         return self
 
     def set_svr_uri(self, uri):
@@ -160,7 +161,7 @@ class Actor:
 
         async def handle_svr_data(websocket):
             async for msg in websocket:
-                print(msg)
+                self._response_queue.put(pickle.loads(msg))
 
         async def poll_send_msg(websocket):
             while not self.svr_close:
@@ -212,8 +213,8 @@ class Actor:
             case ActorContext.FRONTEND:
                 # self.process.terminate()
                 self.svr_close = True
-                if self.svr_thread:
-                    self.svr_thread.join()
+                if self.work_thread:
+                    self.work_thread.join()
                 # self._message_queue.close()
                 # self._response_queue.close()
             case ActorContext.BACKEND:
@@ -279,10 +280,16 @@ class Actor:
                     e = RuntimeError(repr(e))
                     # might be more suitable to have specific substitute exceptions for cases
                     # like torch.cuda.OutOfMemoryError for frontend handling in the future
-            except (AttributeError, KeyError):
+            except (AttributeError, KeyError) as ee:
+                print("something wrong with exception module", ee)
                 pass
+            print("put traced error in queue")
             self._response_queue.put(TracedError(e, trace))
+
+        # print("put end in queue")
         self._response_queue.put(Message.END)
+
+        # print("recv done", message.method_name)
 
     def _send(self, name):
         def _send(*args, _block=False, **kwargs):

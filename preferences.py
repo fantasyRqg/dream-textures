@@ -128,7 +128,8 @@ class model_lookup:
 def fetch_installed_models(blocking=True):
     def on_done(future):
         model_list = future.result()
-
+        if model_list is None:
+            model_list = []
         model_lookup._models = { os.path.basename(model.id).replace('models--', '').replace('--', '/'): model for model in model_list }
 
         pref = bpy.context.preferences.addons[__package__].preferences
