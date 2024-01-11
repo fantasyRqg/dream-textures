@@ -48,7 +48,6 @@ if os.environ.get("DREAM_TEXTURES_SERVER") is None:
     from . import engine
 
     from .diffusers_backend import DiffusersBackend
-    from .weui_api_backend import WebUIApiBackend
 
     requirements_path_items = (
         ('requirements/win-linux-cuda.txt', 'Linux/Windows (CUDA)', 'Linux or Windows with NVIDIA GPU'),
@@ -131,7 +130,6 @@ if os.environ.get("DREAM_TEXTURES_SERVER") is None:
 
         # Register the default backend.
         bpy.utils.register_class(DiffusersBackend)
-        bpy.utils.register_class(WebUIApiBackend)
 
 
     def unregister():
@@ -151,7 +149,6 @@ if os.environ.get("DREAM_TEXTURES_SERVER") is None:
 
         # Unregister the default backend
         bpy.utils.unregister_class(DiffusersBackend)
-        bpy.utils.unregister_class(WebUIApiBackend)
 
 
         kill_generator()
