@@ -1,0 +1,2 @@
+export PYTHONPATH='/Users/rqg/Library/Application Support/Blender/4.0/scripts/addons':'/Applications/Blender.app/Contents/Resources/4.0/scripts/modules':'/Users/rqg/Playground/dream-textures/.python_dependencies'
+'/Applications/Blender.app/Contents/Resources/4.0/python/bin/python3.10' -m grpc_tools.protoc -I. --python_out=. --pyi_out=. --grpc_python_out=. ./generator_service.proto

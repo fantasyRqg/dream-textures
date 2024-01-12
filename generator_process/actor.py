@@ -1,4 +1,3 @@
-import multiprocessing.synchronize
 import enum
 import pickle
 import traceback
@@ -28,7 +27,6 @@ def _load_dependencies():
 
 main_thread_rendering = False
 _load_dependencies()
-import websockets
 
 
 # if current_process().name == "__actor__":
@@ -93,7 +91,7 @@ class Actor:
 
     _message_queue: Queue
     _response_queue: Queue
-    _lock: multiprocessing.synchronize.Lock
+    _lock: Lock
 
     _shared_instance = None
 
@@ -143,7 +141,7 @@ class Actor:
             case ActorContext.FRONTEND:
                 # self.process = get_context('spawn').Process(target=_start_backend, args=(self.__class__, self._message_queue, self._response_queue), name="__actor__", daemon=True)
                 # self.process.start()
-                self.work_thread = threading.Thread(target=self._client_to_sever,daemon=True)
+                self.work_thread = threading.Thread(target=self._client_to_sever, daemon=True)
                 self.work_thread.start()
             case ActorContext.BACKEND:
                 os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"
@@ -156,45 +154,85 @@ class Actor:
         self.svr_uri = uri
 
     def _client_to_sever(self):
+        from dream_textures.protocol import generator_service_pb2, generator_service_pb2_grpc
+        import grpc
+
         self.svr_close = False
         self.svr_connected = False
 
-        async def handle_svr_data(websocket):
-            async for msg in websocket:
-                self._response_queue.put(pickle.loads(msg))
+        async def send_msg_to_svr(stub, msg):
+            dumps = pickle.dumps(msg)
 
-        async def poll_send_msg(websocket):
-            while not self.svr_close:
-                try:
-                    msg = self._message_queue.get(block=False)
-                    if msg:
-                        dumps = pickle.dumps(msg)
-                        print("send", len(dumps), msg.method_name)
-                        await websocket.send(dumps)
-                except Empty as _:
-                    pass
-                await asyncio.sleep(0.1)
+            # chunk dumps by 1MB
+            chunk_size = 1024 * 1024
+            chunks = []
 
-        async def close_when_uri_change(websocket, uri):
-            while not self.svr_close:
-                if uri != self.svr_uri:
-                    await websocket.close()
-                    break
-                await asyncio.sleep(0.2)
+            for i in range(0, len(dumps), chunk_size):
+                chunks.append(generator_service_pb2.MsgPickleDumps(content=dumps[i:i + chunk_size]))
 
-            await websocket.close()
-            print("websocket closed")
+            resp_chunks = []
+            async for response in stub.CallRemoteMethod(chunks):
+                if response:
+                    if response.is_chunked:
+                        resp_chunks.append(response.content)
+                    else:
+                        if len(resp_chunks) > 0 and len(response.content) == 0:
+                            resp_chunks.append(response.content)
+                            response = pickle.loads(b''.join(resp_chunks))
+                        else:
+                            response = pickle.loads(response.content)
+
+                        self._response_queue.put(response)
 
         async def new_connect(uri):
-            async with websockets.connect(uri) as websocket:
-                self.svr_connected = True
-                await asyncio.gather(
-                    handle_svr_data(websocket),
-                    poll_send_msg(websocket),
-                    close_when_uri_change(websocket, uri)
-                )
-                self.svr_connected = False
-                print("svr disconnected")
+            connect_closed = False
+
+            print("start connect to", uri)
+            while not self.svr_close and not connect_closed and uri == self.svr_uri:
+                try:
+                    async with grpc.aio.insecure_channel(uri) as channel:
+                        try:
+                            await asyncio.wait_for(channel.channel_ready(), timeout=1.0)
+                        except asyncio.TimeoutError as _:
+                            continue
+                        print("connected to", uri)
+                        stub = generator_service_pb2_grpc.GeneratorServiceStub(channel)
+
+                        async def poll_send_msg():
+                            while not self.svr_close and not connect_closed:
+                                try:
+                                    msg = self._message_queue.get(block=False)
+                                    if msg:
+                                        await send_msg_to_svr(stub, msg)
+                                except Empty as _:
+                                    pass
+                                await asyncio.sleep(0.1)
+
+                            print("poll_send_msg quit")
+
+                        async def close_when_uri_change():
+                            while not self.svr_close:
+                                # print("close_when_uri_change", uri, self.svr_uri)
+                                if uri != self.svr_uri:
+                                    break
+                                await asyncio.sleep(0.2)
+                            await channel.close(grace=1)
+                            nonlocal connect_closed
+                            connect_closed = True
+                            self.svr_connected = False
+                            print("channel closed")
+
+                        self.svr_connected = True
+
+                        await asyncio.gather(
+                            poll_send_msg(),
+                            close_when_uri_change()
+                        )
+                        print("disconnected from", uri)
+
+                except Exception as e:
+                    print(e)
+                    await asyncio.sleep(0.2)
 
         async def main():
             while not self.svr_close:
@@ -236,7 +274,7 @@ class Actor:
                 return True
 
     def can_use(self):
-        if result := self._lock.acquire(block=False):
+        if result := self._lock.acquire(blocking=False):
             self._lock.release()
         return result
 
@@ -245,7 +283,6 @@ class Actor:
             self._receive(self._message_queue.get())
 
     def _receive(self, message: Message):
-        print("actor receive", message.method_name)
         try:
             response = getattr(self, message.method_name)(*message.args, **message.kwargs)
             if isinstance(response, Generator):
