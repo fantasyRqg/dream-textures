@@ -62,7 +62,7 @@ async def main():
     if "DREAM_TEXTURES_SERVER_PORT" in os.environ:
         port = int(os.environ["DREAM_TEXTURES_SERVER_PORT"])
 
-    svr = grpc.aio.server()
+    svr = grpc.aio.server(compression=grpc.Compression.Gzip)
     generator_service_pb2_grpc.add_GeneratorServiceServicer_to_server(Server(), svr)
     listen_addr = f"0.0.0.0:{port}"
     svr.add_insecure_port(listen_addr)

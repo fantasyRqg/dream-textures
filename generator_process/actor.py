@@ -25,6 +25,7 @@ def _load_dependencies():
         if os.path.exists(python3_path):
             os.add_dll_directory(os.path.dirname(python3_path))
 
+
 main_thread_rendering = False
 _load_dependencies()
 
@@ -190,7 +191,7 @@ class Actor:
             print("start connect to", uri)
             while not self.svr_close and not connect_closed and uri == self.svr_uri:
                 try:
-                    async with grpc.aio.insecure_channel(uri) as channel:
+                    async with grpc.aio.insecure_channel(uri, compression=grpc.Compression.Gzip) as channel:
                         try:
                             await asyncio.wait_for(channel.channel_ready(), timeout=1.0)
                         except asyncio.TimeoutError as _:
