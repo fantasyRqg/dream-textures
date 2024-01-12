@@ -174,12 +174,14 @@ class Actor:
             resp_chunks = []
             async for response in stub.CallRemoteMethod(chunks):
                 if response:
+                    # print("response", response.is_chunked, len(response.content))
                     if response.is_chunked:
                         resp_chunks.append(response.content)
                     else:
                         if len(resp_chunks) > 0 and len(response.content) == 0:
-                            resp_chunks.append(response.content)
+                            # resp_chunks.append(response.content)
                             response = pickle.loads(b''.join(resp_chunks))
+                            resp_chunks.clear()
                         else:
                             response = pickle.loads(response.content)
 
