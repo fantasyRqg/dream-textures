@@ -11,7 +11,7 @@ from ..future import Future
 
 def depth_to_image(
     self,
-    
+
     model: str | Checkpoint,
 
     scheduler: str | Scheduler,
@@ -45,7 +45,7 @@ def depth_to_image(
     import torch
     import PIL.Image
     import PIL.ImageOps
-    
+
     class DreamTexturesDepth2ImgPipeline(diffusers.StableDiffusionInpaintPipeline):
         def prepare_depth(self, depth, image, dtype, device):
             device = torch.device('cpu' if device.type == 'mps' else device.type)
@@ -55,7 +55,7 @@ def depth_to_image(
                 feature_extractor = DPTFeatureExtractor.from_pretrained("Intel/dpt-large")
                 depth_estimator = DPTForDepthEstimation.from_pretrained("Intel/dpt-large")
                 depth_estimator = depth_estimator.to(device)
-                
+
                 pixel_values = feature_extractor(images=image, return_tensors="pt").pixel_values
                 pixel_values = pixel_values.to(device=device)
                 # The DPT-Hybrid model uses batch-norm layers which are not compatible with fp16.
@@ -82,7 +82,7 @@ def depth_to_image(
                 depth = depth[None, None]
                 depth = torch.from_numpy(depth)
                 return depth
-                
+
         def prepare_depth_latents(
             self, depth, batch_size, height, width, dtype, device, generator, do_classifier_free_guidance
         ):
@@ -189,13 +189,21 @@ def depth_to_image(
             callback_steps: Optional[int] = 1,
             **kwargs,
         ):
-            
+
             # 0. Default height and width to unet
             height = height or self.unet.config.sample_size * self.vae_scale_factor
             width = width or self.unet.config.sample_size * self.vae_scale_factor
 
             # 1. Check inputs
-            self.check_inputs(prompt, height, width, strength, callback_steps)
+            self.check_inputs(
+                prompt=prompt,
+                height=height,
+                width=width,
+                strength=strength,
+                callback_steps=callback_steps,
+                image=None,
+                mask_image=None,
+            )
 
             # 2. Define call parameters
             batch_size = 1 if isinstance(prompt, str) else len(prompt)
@@ -323,7 +331,7 @@ def depth_to_image(
                 return (image, has_nsfw_concept)
 
             return diffusers.pipelines.stable_diffusion.StableDiffusionPipelineOutput(images=image, nsfw_content_detected=has_nsfw_concept)
-    
+
     device = self.choose_device(optimizations)
 
     # StableDiffusionPipeline w/ caching
@@ -386,7 +394,7 @@ def depth_to_image(
                 generator=generator,
                 callback=callback
             )
-            
+
             future.add_response(ImageGenerationResult(
                 [np.asarray(PIL.ImageOps.flip(image).convert('RGBA'), dtype=np.float32) / 255.
                     for image in result.images],
@@ -396,5 +404,5 @@ def depth_to_image(
             ))
         except InterruptedError:
             pass
-    
+
     future.set_done()
